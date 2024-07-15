@@ -8,6 +8,8 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/yugabyte/pgx/v5"
 	"github.com/yugabyte/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"locationservice/models"
 	"log"
 	"net/http"
@@ -19,7 +21,7 @@ type LocationHandler struct {
 }
 
 func RegisterLocationHandlers(r *mux.Router, db *pgxpool.Pool) {
-	handler := &LocationHandler{db: db}
+	handler := &LocationHandler{db}
 	r.HandleFunc("/locations", handler.CreateLocation).Methods("POST")
 	r.HandleFunc("/locations/{id}", handler.GetLocation).Methods("GET")
 	r.HandleFunc("/locations/{id}", handler.UpdateLocation).Methods("PUT")
@@ -46,55 +48,66 @@ func (h *LocationHandler) CreateLocation(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *LocationHandler) GetLocation(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	currentSpan := trace.SpanFromContext(ctx)
+	currentSpan.AddEvent("GetLocation")
+
 	vars := mux.Vars(r)
 	id, err := uuid.Parse(vars["id"])
 	if err != nil {
 		http.Error(w, "Invalid location ID", http.StatusBadRequest)
+		currentSpan.RecordError(err)
+		currentSpan.SetStatus(codes.Error, err.Error())
 		return
 	}
 
-	var location models.Location
-
-	conn, err := h.db.Acquire(context.Background())
+	conn, err := h.db.Acquire(ctx)
 	defer conn.Release()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		currentSpan.RecordError(err)
+		currentSpan.SetStatus(codes.Error, err.Error())
 		return
 	}
 
 	// enable yb_read_from_follower BEFORE the BEGIN TX (we'll reset it too at the end)
-	_, _ = conn.Exec(context.Background(), "set yb_read_from_followers = true")
+	_, _ = conn.Exec(ctx, "set yb_read_from_followers = true")
 
-	tx, err := conn.BeginTx(context.Background(), pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	tx, err := conn.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		currentSpan.RecordError(err)
+		currentSpan.SetStatus(codes.Error, err.Error())
 		return
 	}
 
 	var value string
-	_ = tx.QueryRow(context.Background(), "select current_setting('yb_read_from_followers')").Scan(&value)
+	_ = tx.QueryRow(ctx, "select current_setting('yb_read_from_followers')").Scan(&value)
 	log.Println("Running in Tx: yb_read_from_followers is", value)
 
 	// begin timer
-	err = tx.QueryRow(context.Background(),
+	var location models.Location
+	err = tx.QueryRow(ctx,
 		"select loc.id, loc.name, loc.description, adr.id, adr.street, adr.city, adr.state_cd, adr.postal_cd, adr.country_cd, adr.longitude, adr.latitude from location loc left join address adr on loc.address_id = adr.id where loc.id=$1 and loc.active=true;", id).
 		Scan(&location.ID, &location.Name, &location.Description, &location.AddressId, &location.Street, &location.City, &location.State, &location.PostalCode, &location.Country, &location.Longitude, &location.Latitude)
 	// end timer?
 
 	if err != nil {
-		_ = tx.Rollback(context.Background())
-		_, _ = conn.Exec(context.Background(), "set yb_read_from_followers = false")
+		_ = tx.Rollback(ctx)
+		_, _ = conn.Exec(ctx, "set yb_read_from_followers = false")
 
 		if errors.Is(err, pgx.ErrNoRows) {
 			http.Error(w, "Location not found", http.StatusNotFound)
 		} else {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
+		currentSpan.RecordError(err)
+		currentSpan.SetStatus(codes.Error, err.Error())
 		return
 	}
 
-	_ = tx.Commit(context.Background())
-	_, _ = conn.Exec(context.Background(), "set yb_read_from_followers = false")
+	_ = tx.Commit(ctx)
+	_, _ = conn.Exec(ctx, "set yb_read_from_followers = false")
 
 	json.NewEncoder(w).Encode(location)
 }
