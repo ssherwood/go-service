@@ -1,4 +1,4 @@
-package telemetry
+package infra
 
 import (
 	"context"
@@ -9,21 +9,14 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"google.golang.org/grpc/credentials"
+	"locationservice/common"
 	"log"
-	"os"
 )
 
-func getEnv(key, fallback string) string {
-	if value, ok := os.LookupEnv(key); ok {
-		return value
-	}
-	return fallback
-}
-
 var (
-	serviceName  = getEnv("SERVICE_NAME", "location-service")
-	collectorURL = getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "0.0.0.0:4317")
-	insecure     = getEnv("INSECURE_MODE", "true")
+	serviceName  = common.GetEnv("SERVICE_NAME", "location-service")
+	collectorURL = common.GetEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
+	insecure     = common.GetEnv("INSECURE_MODE", "true")
 )
 
 func grpcOptions() []otlptracegrpc.Option {
@@ -43,7 +36,7 @@ func grpcOptions() []otlptracegrpc.Option {
 	return options
 }
 
-func InitTracing(ctx context.Context) (*trace.TracerProvider, error) {
+func InitTracerProvider(ctx context.Context) (*trace.TracerProvider, error) {
 	traceExporter, err := otlptracegrpc.New(ctx, grpcOptions()...)
 	if err != nil {
 		log.Fatalf("error: %s", err.Error())

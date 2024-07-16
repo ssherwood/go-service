@@ -1,4 +1,4 @@
-package handlers
+package location
 
 import (
 	"context"
@@ -10,26 +10,25 @@ import (
 	"github.com/yugabyte/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"locationservice/models"
 	"log"
 	"net/http"
 	"strconv"
 )
 
-type LocationHandler struct {
+type Handler struct {
 	db *pgxpool.Pool
 }
 
-func RegisterLocationHandlers(r *mux.Router, db *pgxpool.Pool) {
-	handler := &LocationHandler{db}
+func RegisterHandlers(r *mux.Router, db *pgxpool.Pool) {
+	handler := &Handler{db}
 	r.HandleFunc("/locations", handler.CreateLocation).Methods("POST")
 	r.HandleFunc("/locations/{id}", handler.GetLocation).Methods("GET")
 	r.HandleFunc("/locations/{id}", handler.UpdateLocation).Methods("PUT")
 	r.HandleFunc("/locations/{id}", handler.DeleteLocation).Methods("DELETE")
 }
 
-func (h *LocationHandler) CreateLocation(w http.ResponseWriter, r *http.Request) {
-	var location models.Location
+func (h *Handler) CreateLocation(w http.ResponseWriter, r *http.Request) {
+	var location Location
 	if err := json.NewDecoder(r.Body).Decode(&location); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -47,7 +46,7 @@ func (h *LocationHandler) CreateLocation(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(location)
 }
 
-func (h *LocationHandler) GetLocation(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) GetLocation(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	currentSpan := trace.SpanFromContext(ctx)
 	currentSpan.AddEvent("GetLocation")
@@ -61,6 +60,7 @@ func (h *LocationHandler) GetLocation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// to do a
 	conn, err := h.db.Acquire(ctx)
 	defer conn.Release()
 	if err != nil {
@@ -86,7 +86,7 @@ func (h *LocationHandler) GetLocation(w http.ResponseWriter, r *http.Request) {
 	log.Println("Running in Tx: yb_read_from_followers is", value)
 
 	// begin timer
-	var location models.Location
+	var location Location
 	err = tx.QueryRow(ctx,
 		"select loc.id, loc.name, loc.description, adr.id, adr.street, adr.city, adr.state_cd, adr.postal_cd, adr.country_cd, adr.longitude, adr.latitude from location loc left join address adr on loc.address_id = adr.id where loc.id=$1 and loc.active=true;", id).
 		Scan(&location.ID, &location.Name, &location.Description, &location.AddressId, &location.Street, &location.City, &location.State, &location.PostalCode, &location.Country, &location.Longitude, &location.Latitude)
@@ -112,7 +112,7 @@ func (h *LocationHandler) GetLocation(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(location)
 }
 
-func (h *LocationHandler) UpdateLocation(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) UpdateLocation(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, err := strconv.Atoi(vars["id"])
 	if err != nil {
@@ -120,7 +120,7 @@ func (h *LocationHandler) UpdateLocation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var location models.Location
+	var location Location
 	if err := json.NewDecoder(r.Body).Decode(&location); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -141,7 +141,7 @@ func (h *LocationHandler) UpdateLocation(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(location)
 }
 
-func (h *LocationHandler) DeleteLocation(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) DeleteLocation(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, err := strconv.Atoi(vars["id"])
 	if err != nil {
