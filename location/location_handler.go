@@ -59,7 +59,6 @@ func (h *Handler) GetLocation(w http.ResponseWriter, r *http.Request) {
 		currentSpan.SetStatus(codes.Error, err.Error())
 		return
 	}
-
 	// to do a
 	conn, err := h.db.Acquire(ctx)
 	defer conn.Release()

@@ -6,6 +6,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/yugabyte/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gorilla/mux/otelmux"
+	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"locationservice/common"
 	"locationservice/infra"
@@ -18,13 +19,6 @@ import (
 	"time"
 )
 
-var (
-	serviceName   = "LocationService"
-	serverAddress = common.GetEnv("SERVER_ADDRESS", ":8080")
-	writeTimeout  = common.GetEnvAsDuration("WRITE_TIMEOUT", 15*time.Second)
-	readTimeout   = common.GetEnvAsDuration("READ_TIMEOUT", 10*time.Second)
-)
-
 type Application interface {
 	Initialize(ctx context.Context) error
 	Run()
@@ -32,10 +26,11 @@ type Application interface {
 }
 
 type LocationApplication struct {
-	Server         *http.Server
-	Router         *mux.Router
-	TracerProvider *trace.TracerProvider
-	DB             *pgxpool.Pool
+	Server          *http.Server
+	Router          *mux.Router
+	TracerProvider  *trace.TracerProvider
+	MetricsProvider *metric.MeterProvider
+	DB              *pgxpool.Pool
 }
 
 func (app *LocationApplication) Initialize(ctx context.Context) error {
@@ -45,6 +40,12 @@ func (app *LocationApplication) Initialize(ctx context.Context) error {
 		app.TracerProvider = tp
 	}
 
+	if mp, err := infra.InitializeMetricProvider(ctx); err != nil {
+		return err
+	} else {
+		app.MetricsProvider = mp
+	}
+
 	if db, err := infra.InitializeDB(ctx); err != nil {
 		return err
 	} else {
@@ -52,14 +53,14 @@ func (app *LocationApplication) Initialize(ctx context.Context) error {
 	}
 
 	app.Router = mux.NewRouter()
-	app.Router.Use(otelmux.Middleware(serviceName))
+	app.Router.Use(otelmux.Middleware(common.ServiceName))
 	location.RegisterHandlers(app.Router, app.DB)
 
 	app.Server = &http.Server{
 		Handler:      app.Router,
-		Addr:         serverAddress,
-		WriteTimeout: writeTimeout,
-		ReadTimeout:  readTimeout,
+		Addr:         common.ServerAddress,
+		WriteTimeout: common.WriteTimeout,
+		ReadTimeout:  common.ReadTimeout,
 	}
 
 	return nil
@@ -87,7 +88,7 @@ func (app *LocationApplication) Run() {
 		log.Fatalf("Failed to gracefully shutdown the application: %v", err)
 	}
 
-	log.Println("Application stopped gracefully.")
+	log.Println("Application stopped.")
 }
 
 // Shutdown - invokes the global shutdown on the app to remove/close open resources
@@ -96,13 +97,19 @@ func (app *LocationApplication) Shutdown(ctx context.Context) error {
 
 	if app.Server != nil {
 		if err := app.Server.Shutdown(ctx); err != nil {
-			return err // should we really return or just keep truckin'?
+			log.Printf("Unable to cleanly shutdown HTTP server: %v", err)
+		}
+	}
+
+	if app.MetricsProvider != nil {
+		if err := app.MetricsProvider.Shutdown(ctx); err != nil {
+			log.Printf("Unable to cleanly shutdown OTEL metrics provider: %v", err)
 		}
 	}
 
 	if app.TracerProvider != nil {
 		if err := app.TracerProvider.Shutdown(ctx); err != nil {
-			return err
+			log.Printf("Unable to cleanly shutdown OTEL tracer provider: %v", err)
 		}
 	}
 

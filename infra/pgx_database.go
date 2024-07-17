@@ -6,7 +6,7 @@ import (
 	"github.com/yugabyte/pgx/v5"
 	"github.com/yugabyte/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel/attribute"
-	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
 	"log"
 	"strings"
 	"time"
@@ -23,7 +23,7 @@ func convertMapToString(params map[string]string) string {
 func pgxConfig() *pgxpool.Config {
 
 	configOptions := map[string]string{
-		"load_balance":  "false",
+		"load_balance":  "true",
 		"topology_keys": "gcp.us-east1.*:1,gcp.us-central1.*:2,gcp.us-west1.*:3",
 	}
 	//fmt.Println(convertMapToString(configOptions))
@@ -38,12 +38,13 @@ func pgxConfig() *pgxpool.Config {
 	dbConfig.MinConns = 10
 	dbConfig.MaxConnLifetime = time.Hour * 4
 	dbConfig.MaxConnLifetimeJitter = time.Minute * 15
-	//dbConfig.MaxConnIdleTime = defaultMaxConnIdleTime
 	dbConfig.HealthCheckPeriod = time.Minute * 10
 	dbConfig.ConnConfig.ConnectTimeout = time.Second * 5
+
 	dbConfig.ConnConfig.Tracer = NewQueryTracer([]attribute.KeyValue{
 		semconv.DBSystemKey.String("yugabytedb"),
-		semconv.DBConnectionStringKey.String(url),
+		semconv.ServerAddress("TODO"),
+		semconv.ServerPort(5433),
 	})
 
 	dbConfig.BeforeAcquire = func(ctx context.Context, c *pgx.Conn) bool {
