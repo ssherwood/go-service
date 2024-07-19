@@ -6,9 +6,11 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/yugabyte/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gorilla/mux/otelmux"
-	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/trace"
-	"locationservice/common"
+	"locationservice/config"
 	"locationservice/infra"
 	"locationservice/location"
 	"log"
@@ -29,8 +31,9 @@ type LocationApplication struct {
 	Server          *http.Server
 	Router          *mux.Router
 	TracerProvider  *trace.TracerProvider
-	MetricsProvider *metric.MeterProvider
+	MetricsProvider *sdkmetric.MeterProvider
 	DB              *pgxpool.Pool
+	TestCtr         metric.Int64Counter
 }
 
 func (app *LocationApplication) Initialize(ctx context.Context) error {
@@ -46,6 +49,17 @@ func (app *LocationApplication) Initialize(ctx context.Context) error {
 		app.MetricsProvider = mp
 	}
 
+	// TODO not sure how to hook this up to things like the database yet...
+	meter := app.MetricsProvider.Meter("foo")
+	if c, err := meter.Int64Counter("test.ctr",
+		metric.WithDescription("The number of calls to GetLocation"),
+		metric.WithUnit("{test}")); err != nil {
+		return err
+	} else {
+		app.TestCtr = c
+	}
+	app.TestCtr.Add(ctx, 1, metric.WithAttributes(attribute.Int("test.value", 1)))
+
 	if db, err := infra.InitializeDB(ctx); err != nil {
 		return err
 	} else {
@@ -53,14 +67,14 @@ func (app *LocationApplication) Initialize(ctx context.Context) error {
 	}
 
 	app.Router = mux.NewRouter()
-	app.Router.Use(otelmux.Middleware(common.ServiceName))
+	app.Router.Use(otelmux.Middleware(config.ServiceName))
 	location.RegisterHandlers(app.Router, app.DB)
 
 	app.Server = &http.Server{
 		Handler:      app.Router,
-		Addr:         common.ServerAddress,
-		WriteTimeout: common.WriteTimeout,
-		ReadTimeout:  common.ReadTimeout,
+		Addr:         config.ServerAddress,
+		WriteTimeout: config.WriteTimeout,
+		ReadTimeout:  config.ReadTimeout,
 	}
 
 	return nil

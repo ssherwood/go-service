@@ -5,12 +5,18 @@ import (
 	"fmt"
 	"github.com/yugabyte/pgx/v5"
 	"github.com/yugabyte/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
+	"locationservice/config"
 	"log"
 	"strings"
 	"time"
 )
+
+var databaseMeter = otel.Meter("github.com/yugabyte/pgx/v5/pgxpool",
+	metric.WithInstrumentationAttributes(semconv.ServiceName(config.ServiceName)))
 
 func convertMapToString(params map[string]string) string {
 	var pairs []string
@@ -74,11 +80,43 @@ func pgxConfig() *pgxpool.Config {
 	return dbConfig
 }
 
+// initPgxPoolMeter
+// given a pgxpool.Pool, build a databaseMeter callback for the available statistics available.
+func initPgxPoolMeter(dbPool *pgxpool.Pool) error {
+	idleConns, _ := databaseMeter.Int64ObservableGauge("pgxpool.idleConns")
+	totalConns, _ := databaseMeter.Int64ObservableGauge("pgxpool.totalConns")
+	acquireCount, _ := databaseMeter.Int64ObservableCounter("pgxpool.acquireCount")
+	newConnsCount, _ := databaseMeter.Int64ObservableCounter("pgxpool.newConnsCount")
+	maxLifetimeDestroyCount, _ := databaseMeter.Int64ObservableCounter("pgxpool.maxLifetimeDestroyCount")
+	acquireDuration, _ := databaseMeter.Int64ObservableGauge("pgxpool.acquireDuration", metric.WithUnit("ms"))
+
+	_, err := databaseMeter.RegisterCallback(
+		func(_ context.Context, o metric.Observer) error {
+			dbStats := dbPool.Stat()
+			o.ObserveInt64(idleConns, int64(dbStats.IdleConns()))
+			o.ObserveInt64(totalConns, int64(dbStats.TotalConns()))
+			o.ObserveInt64(acquireCount, dbStats.AcquireCount())
+			o.ObserveInt64(newConnsCount, dbStats.NewConnsCount())
+			o.ObserveInt64(maxLifetimeDestroyCount, dbStats.MaxLifetimeDestroyCount())
+			o.ObserveInt64(acquireDuration, dbStats.AcquireDuration().Milliseconds())
+			return nil
+		},
+		idleConns, totalConns, acquireCount, newConnsCount, maxLifetimeDestroyCount, acquireDuration,
+	)
+	if err != nil {
+		fmt.Printf("failed to register pgxpool stats: %v\n", err)
+		return err
+	}
+
+	return nil
+}
+
 func InitializeDB(ctx context.Context) (*pgxpool.Pool, error) {
 	if dbPool, err := pgxpool.NewWithConfig(ctx, pgxConfig()); err != nil {
 		log.Fatalf("Unable to create connection pool: %v\n", err)
 		return nil, err
 	} else {
+		_ = initPgxPoolMeter(dbPool)
 		return dbPool, nil
 	}
 }

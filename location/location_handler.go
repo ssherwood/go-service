@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/yugabyte/pgx/v5"
@@ -50,6 +51,8 @@ func (h *Handler) GetLocation(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	currentSpan := trace.SpanFromContext(ctx)
 	currentSpan.AddEvent("GetLocation")
+
+	fmt.Println("IdleConns = ", h.db.Stat().IdleConns())
 
 	vars := mux.Vars(r)
 	id, err := uuid.Parse(vars["id"])

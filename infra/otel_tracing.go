@@ -9,18 +9,18 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
 	"google.golang.org/grpc/credentials"
-	"locationservice/common"
+	"locationservice/config"
 	"log"
 	"os"
 )
 
 func grpcOptions() []otlptracegrpc.Option {
 	options := []otlptracegrpc.Option{
-		otlptracegrpc.WithEndpoint(common.CollectorURL),
+		otlptracegrpc.WithEndpoint(config.CollectorURL),
 		otlptracegrpc.WithCompressor("gzip"),
 	}
 
-	if common.Insecure == "true" {
+	if config.Insecure == "true" {
 		options = append(options, otlptracegrpc.WithInsecure())
 	} else {
 		options = append(options, otlptracegrpc.WithTLSCredentials(
@@ -48,9 +48,9 @@ func InitTracerProvider(ctx context.Context) (*trace.TracerProvider, error) {
 			resource.NewWithAttributes(
 				semconv.SchemaURL,
 				semconv.TelemetrySDKLanguageGo,
-				semconv.ServiceNameKey.String(common.ServiceName),
-				semconv.ServiceVersion(common.ServiceVersion),
-				semconv.HostNameKey.String(common.Hostname),
+				semconv.ServiceNameKey.String(config.ServiceName),
+				semconv.ServiceVersion(config.ServiceVersion),
+				semconv.HostNameKey.String(config.Hostname),
 				semconv.ProcessPIDKey.Int64(int64(os.Getpid())),
 			),
 		),
