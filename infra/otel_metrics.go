@@ -9,17 +9,17 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
 	"google.golang.org/grpc/credentials"
 	"locationservice/config"
+	"log"
 	"os"
-	"time"
 )
 
 func grpcMetricOptions() []otlpmetricgrpc.Option {
 	options := []otlpmetricgrpc.Option{
-		otlpmetricgrpc.WithEndpoint(config.CollectorURL),
-		otlpmetricgrpc.WithCompressor("gzip"),
+		otlpmetricgrpc.WithEndpoint(config.OTELCollectorURL),
+		otlpmetricgrpc.WithCompressor(config.OTELCompressor),
 	}
 
-	if config.Insecure == "true" {
+	if config.OTELExporterInsecure == "true" {
 		options = append(options, otlpmetricgrpc.WithInsecure())
 	} else {
 		options = append(options, otlpmetricgrpc.WithTLSCredentials(
@@ -34,14 +34,15 @@ func grpcMetricOptions() []otlpmetricgrpc.Option {
 // https://opentelemetry.io/docs/languages/go/instrumentation/#metrics
 func InitializeMetricProvider(ctx context.Context) (*metric.MeterProvider, error) {
 
-	exporter, err := otlpmetricgrpc.New(ctx, grpcMetricOptions()...)
+	metricExporter, err := otlpmetricgrpc.New(ctx, grpcMetricOptions()...)
 	if err != nil {
+		log.Printf("Unable to initialize OTEL metric metricExporter: %v\n", err)
 		return nil, err
 	}
 
 	meterProvider := metric.NewMeterProvider(
 		metric.WithReader(
-			metric.NewPeriodicReader(exporter, metric.WithInterval(10*time.Second)), // emit every 10s
+			metric.NewPeriodicReader(metricExporter, metric.WithInterval(config.OTELMeterInterval)),
 		),
 		metric.WithResource(
 			resource.NewWithAttributes(

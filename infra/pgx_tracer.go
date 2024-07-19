@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
 	"go.opentelemetry.io/otel/trace"
+	"locationservice/config"
 	"log"
 	"runtime/debug"
 	"strings"
@@ -97,7 +98,7 @@ func (t *PgxQueryTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pg
 }
 
 func (t *PgxQueryTracer) TraceConnectStart(ctx context.Context, data pgx.TraceConnectStartData) context.Context {
-	log.Println(">>> ConnectionStart:", "connString:", data.ConnConfig.ConnString())
+	log.Println(">>> ConnectionStart:", "connString:", maskPostgresPassword(data.ConnConfig.ConnString()))
 	return ctx
 }
 
@@ -127,8 +128,8 @@ func (t *PgxQueryTracer) sqlOperationName(stmt string) string {
 	return strings.ToUpper(parts[0])
 }
 
-// connectionAttributesFromConfig returns a slice of SpanStartOptions that contain
-// attributes from the given connection config.
+// connectionAttributesFromConfig returns a slice of SpanStartOptions that contain attributes from the given connection
+// config.
 func connectionAttributesFromConfig(config *pgx.ConnConfig) []trace.SpanStartOption {
 	if config != nil {
 		return []trace.SpanStartOption{
@@ -182,8 +183,8 @@ func NewQueryTracer(globalAttrs []attribute.KeyValue) pgx.QueryTracer {
 		attrs:               globalAttrs,
 		trimQuerySpanName:   false,
 		spanNameFunc:        nil,
-		prefixQuerySpanName: true,
-		logSQLStatement:     true,
-		includeParams:       true,
+		prefixQuerySpanName: config.OTELPrefixQuerySpanName,
+		logSQLStatement:     config.OTELTracerLogSQLStatement,
+		includeParams:       config.OTELTracerIncludeParams,
 	}
 }

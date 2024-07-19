@@ -73,8 +73,8 @@ func (app *LocationApplication) Initialize(ctx context.Context) error {
 	app.Server = &http.Server{
 		Handler:      app.Router,
 		Addr:         config.ServerAddress,
-		WriteTimeout: config.WriteTimeout,
-		ReadTimeout:  config.ReadTimeout,
+		WriteTimeout: config.ServerWriteTimeout,
+		ReadTimeout:  config.ServerReadTimeout,
 	}
 
 	return nil
@@ -83,9 +83,9 @@ func (app *LocationApplication) Initialize(ctx context.Context) error {
 func (app *LocationApplication) Run() {
 
 	go func() {
-		log.Printf("Starting server on %s", app.Server.Addr)
+		log.Printf("Starting %s on %s\n", config.ServiceName, app.Server.Addr)
 		if err := app.Server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("Failed to start server: %v", err)
+			log.Printf("Failed to start %s: %v\n", config.ServiceName, err)
 		}
 	}()
 
@@ -99,31 +99,31 @@ func (app *LocationApplication) Run() {
 	defer cancel()
 
 	if err := app.Shutdown(cancelContext); err != nil {
-		log.Fatalf("Failed to gracefully shutdown the application: %v", err)
+		log.Printf("Failed to gracefully shutdown %s: %v\n", config.ServiceName, err)
 	}
 
-	log.Println("Application stopped.")
+	log.Printf("%s stopped\n", config.ServiceName)
 }
 
 // Shutdown - invokes the global shutdown on the app to remove/close open resources
 func (app *LocationApplication) Shutdown(ctx context.Context) error {
-	log.Println("Shutting down the application...")
-
+	log.Printf("Shutting down the %s...\n", config.ServiceName)
+	
 	if app.Server != nil {
 		if err := app.Server.Shutdown(ctx); err != nil {
-			log.Printf("Unable to cleanly shutdown HTTP server: %v", err)
+			log.Printf("Unable to cleanly shutdown HTTP server: %v\n", err)
 		}
 	}
 
 	if app.MetricsProvider != nil {
 		if err := app.MetricsProvider.Shutdown(ctx); err != nil {
-			log.Printf("Unable to cleanly shutdown OTEL metrics provider: %v", err)
+			log.Printf("Unable to cleanly shutdown OTEL metrics provider: %v\n", err)
 		}
 	}
 
 	if app.TracerProvider != nil {
 		if err := app.TracerProvider.Shutdown(ctx); err != nil {
-			log.Printf("Unable to cleanly shutdown OTEL tracer provider: %v", err)
+			log.Printf("Unable to cleanly shutdown OTEL tracer provider: %v\n", err)
 		}
 	}
 

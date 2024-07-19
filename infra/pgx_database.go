@@ -11,49 +11,67 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
 	"locationservice/config"
 	"log"
+	"regexp"
 	"strings"
-	"time"
 )
 
-var databaseMeter = otel.Meter("github.com/yugabyte/pgx/v5/pgxpool",
-	metric.WithInstrumentationAttributes(semconv.ServiceName(config.ServiceName)))
-
-func convertMapToString(params map[string]string) string {
-	var pairs []string
-	for key, value := range params {
-		pairs = append(pairs, fmt.Sprintf("%s=%s", key, value))
+func InitializeDB(ctx context.Context) (*pgxpool.Pool, error) {
+	poolConfig, err := pgxPoolConfig()
+	if err != nil {
+		return nil, err
 	}
-	return strings.Join(pairs, "&")
+
+	if dbPool, err := pgxpool.NewWithConfig(ctx, poolConfig); err != nil {
+		log.Printf("Unable to create pgx connection pool: %v\n", err)
+		return nil, err
+	} else {
+		_ = initPgxPoolMeter(dbPool)
+		return dbPool, nil
+	}
 }
 
-func pgxConfig() *pgxpool.Config {
+func pgxPoolConfig() (*pgxpool.Config, error) {
+	url := fmt.Sprintf("postgres://%s:%s@%s/%s?%s",
+		config.DBUserName, config.DBPassword, config.DBHostname, config.DBDatabase,
+		mapToOptions(
+			map[string]string{
+				"sslmode":       config.DBSSLMode,
+				"load_balance":  config.DBYSQLLoadBalance,
+				"topology_keys": config.DBYSQLTopologyKeys,
+			},
+		),
+	)
 
-	configOptions := map[string]string{
-		"load_balance":  "true",
-		"topology_keys": "gcp.us-east1.*:1,gcp.us-central1.*:2,gcp.us-west1.*:3",
-	}
-	//fmt.Println(convertMapToString(configOptions))
-
-	url := fmt.Sprintf("postgres://%s:%s@%s/%s?%s", "yugabyte", "", "127.0.0.1:5433,127.0.0.2:5433,127.0.0.3:5433", "yugabyte", convertMapToString(configOptions))
-	dbConfig, err := pgxpool.ParseConfig(url)
+	poolConfig, err := pgxpool.ParseConfig(url)
 	if err != nil {
-		log.Fatal("Failed to create a config, error: ", err)
+		log.Printf("Failed to parse pgxpool url: %v\n", err)
+		return nil, err
 	}
 
-	dbConfig.MaxConns = 10
-	dbConfig.MinConns = 10
-	dbConfig.MaxConnLifetime = time.Hour * 4
-	dbConfig.MaxConnLifetimeJitter = time.Minute * 15
-	dbConfig.HealthCheckPeriod = time.Minute * 10
-	dbConfig.ConnConfig.ConnectTimeout = time.Second * 5
+	poolConfig.MaxConns = config.DBMaxConns
+	poolConfig.MinConns = config.DBMinConns
+	poolConfig.MaxConnLifetime = config.DBMaxConnLifetime
+	poolConfig.MaxConnLifetimeJitter = config.DBMaxConnLifetimeJitter
+	poolConfig.HealthCheckPeriod = config.DBHealthCheckPeriod
+	poolConfig.ConnConfig.ConnectTimeout = config.DBConnectTimeout
 
-	dbConfig.ConnConfig.Tracer = NewQueryTracer([]attribute.KeyValue{
-		semconv.DBSystemKey.String("yugabytedb"),
-		semconv.ServerAddress("TODO"),
-		semconv.ServerPort(5433),
-	})
+	poolConfig.BeforeAcquire = defaultBeforeAcquireFn()
+	poolConfig.AfterRelease = defaultAfterReleaseFn()
+	poolConfig.BeforeClose = defaultBeforeCloseFn()
 
-	dbConfig.BeforeAcquire = func(ctx context.Context, c *pgx.Conn) bool {
+	if config.OTELTracerEnabled {
+		poolConfig.ConnConfig.Tracer = NewQueryTracer([]attribute.KeyValue{
+			semconv.DBSystemKey.String("yugabytedb"),
+			semconv.DBConnectionStringKey.String(maskPostgresPassword(url)),
+			semconv.ServerAddress(config.Hostname),
+		})
+	}
+
+	return poolConfig, nil
+}
+
+func defaultBeforeAcquireFn() func(ctx context.Context, c *pgx.Conn) bool {
+	return func(ctx context.Context, c *pgx.Conn) bool {
 		log.Println("Before acquiring a database connection from the pool")
 
 		var value string
@@ -62,8 +80,10 @@ func pgxConfig() *pgxpool.Config {
 
 		return true
 	}
+}
 
-	dbConfig.AfterRelease = func(c *pgx.Conn) bool {
+func defaultAfterReleaseFn() func(c *pgx.Conn) bool {
+	return func(c *pgx.Conn) bool {
 		log.Println("After releasing database connection back to the pool")
 
 		var value string
@@ -72,17 +92,33 @@ func pgxConfig() *pgxpool.Config {
 
 		return true
 	}
+}
 
-	dbConfig.BeforeClose = func(c *pgx.Conn) {
+func defaultBeforeCloseFn() func(c *pgx.Conn) {
+	return func(c *pgx.Conn) {
 		log.Println("Closed database connection to host", c.Config().Host)
 	}
+}
 
-	return dbConfig
+func mapToOptions(params map[string]string) string {
+	var pairs []string
+	for key, value := range params {
+		pairs = append(pairs, fmt.Sprintf("%s=%s", key, value))
+	}
+	return strings.Join(pairs, "&")
+}
+
+func maskPostgresPassword(connURL string) string {
+	re := regexp.MustCompile(`(postgres://[^:]+:)([^@]+)(@.+)`)
+	return re.ReplaceAllString(connURL, `${1}*****${3}`)
 }
 
 // initPgxPoolMeter
 // given a pgxpool.Pool, build a databaseMeter callback for the available statistics available.
 func initPgxPoolMeter(dbPool *pgxpool.Pool) error {
+	var databaseMeter = otel.Meter("github.com/yugabyte/pgx/v5/pgxpool",
+		metric.WithInstrumentationAttributes(semconv.ServiceName(config.ServiceName)))
+
 	idleConns, _ := databaseMeter.Int64ObservableGauge("pgxpool.idleConns")
 	totalConns, _ := databaseMeter.Int64ObservableGauge("pgxpool.totalConns")
 	acquireCount, _ := databaseMeter.Int64ObservableCounter("pgxpool.acquireCount")
@@ -109,14 +145,4 @@ func initPgxPoolMeter(dbPool *pgxpool.Pool) error {
 	}
 
 	return nil
-}
-
-func InitializeDB(ctx context.Context) (*pgxpool.Pool, error) {
-	if dbPool, err := pgxpool.NewWithConfig(ctx, pgxConfig()); err != nil {
-		log.Fatalf("Unable to create connection pool: %v\n", err)
-		return nil, err
-	} else {
-		_ = initPgxPoolMeter(dbPool)
-		return dbPool, nil
-	}
 }

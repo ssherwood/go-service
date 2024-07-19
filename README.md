@@ -50,16 +50,10 @@ select uuid('f9654e2a-dc0d-4423-8291-' || lpad(seq::text, 12, '0')),
 from generate_series(0, 5000) as seq;
 ```
 
+```postgresql
+\i ybwr.sql
 
-## Run Jaeger
+execute snap_reset;
 
-```shell
-docker run --name jaeger \
-  -e COLLECTOR_OTLP_ENABLED=true \
-  -p 16686:16686 \
-  -p 4317:4317 \
-  -p 4318:4318 \
-  jaegertracing/all-in-one:1.35
+execute snap_table;
 ```
-^ latest version (1.58) fails to accept connections, I fell back to this older version to get it working.  I'm not sure
-the exact version that is breaking...

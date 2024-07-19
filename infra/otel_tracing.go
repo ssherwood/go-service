@@ -14,18 +14,18 @@ import (
 	"os"
 )
 
-func grpcOptions() []otlptracegrpc.Option {
+func grpcTracerOptions() []otlptracegrpc.Option {
 	options := []otlptracegrpc.Option{
-		otlptracegrpc.WithEndpoint(config.CollectorURL),
-		otlptracegrpc.WithCompressor("gzip"),
+		otlptracegrpc.WithEndpoint(config.OTELCollectorURL),
+		otlptracegrpc.WithCompressor(config.OTELCompressor),
 	}
 
-	if config.Insecure == "true" {
+	if config.OTELExporterInsecure == "true" {
 		options = append(options, otlptracegrpc.WithInsecure())
 	} else {
-		options = append(options, otlptracegrpc.WithTLSCredentials(
-			credentials.NewClientTLSFromCert(nil, ""),
-		))
+		options = append(options,
+			otlptracegrpc.WithTLSCredentials(credentials.NewClientTLSFromCert(nil, "")),
+		)
 	}
 
 	return options
@@ -34,9 +34,10 @@ func grpcOptions() []otlptracegrpc.Option {
 // InitTracerProvider
 // https://opentelemetry.io/docs/languages/go/instrumentation/#traces
 func InitTracerProvider(ctx context.Context) (*trace.TracerProvider, error) {
-	traceExporter, err := otlptracegrpc.New(ctx, grpcOptions()...)
+	traceExporter, err := otlptracegrpc.New(ctx, grpcTracerOptions()...)
 	if err != nil {
-		log.Fatalf("error: %s", err.Error())
+		log.Printf("Unable to initialize OTEL trace exporter: %v\n", err)
+		return nil, err
 	}
 
 	tracerProvider := trace.NewTracerProvider(
