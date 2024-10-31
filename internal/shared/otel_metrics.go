@@ -1,15 +1,15 @@
-package infra
+package shared
 
 import (
 	"context"
+	"github.com/ssherwood/locationservice/internal/config"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
 	"google.golang.org/grpc/credentials"
-	"locationservice/config"
-	"log"
+	"log/slog"
 	"os"
 )
 
@@ -19,7 +19,7 @@ func grpcMetricOptions() []otlpmetricgrpc.Option {
 		otlpmetricgrpc.WithCompressor(config.OTELCompressor),
 	}
 
-	if config.OTELExporterInsecure == "true" {
+	if config.OTELExporterInsecure {
 		options = append(options, otlpmetricgrpc.WithInsecure())
 	} else {
 		options = append(options, otlpmetricgrpc.WithTLSCredentials(
@@ -36,7 +36,7 @@ func InitializeMetricProvider(ctx context.Context) (*metric.MeterProvider, error
 
 	metricExporter, err := otlpmetricgrpc.New(ctx, grpcMetricOptions()...)
 	if err != nil {
-		log.Printf("Unable to initialize OTEL metric metricExporter: %v\n", err)
+		slog.Warn("Unable to initialize OTEL metric metricExporter", config.ErrAttr(err))
 		return nil, err
 	}
 

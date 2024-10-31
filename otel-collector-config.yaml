@@ -3,22 +3,11 @@ receivers:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
-  hostmetrics:
-    collection_interval: 1m
-    scrapers:
-      cpu:
-      load:
-      memory:
-      disk:
-      filesystem:
-      network:
-      paging:
-      processes:
 
 processors:
 
 extensions:
-  health_check: {}
+  health_check: { }
 
 exporters:
   otlp:
@@ -32,9 +21,12 @@ exporters:
 
 service:
   pipelines:
+    logs:
+      receivers: [ otlp ]
+      exporters: [ logging ]
     traces:
-      receivers: [otlp]
-      exporters: [otlp]
+      receivers: [ otlp ]
+      exporters: [ otlp ]
     metrics:
-      receivers: [otlp] # hostmetrics
-      exporters: [prometheus,logging]
+      receivers: [ otlp ]
+      exporters: [ prometheus ]

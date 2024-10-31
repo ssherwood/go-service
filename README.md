@@ -57,3 +57,7 @@ execute snap_reset;
 
 execute snap_table;
 ```
+
+```postgresql
+SELECT datname,pid,usesysid,usename,application_name,client_addr,state FROM pg_stat_activity where application_name = 'goapp';
+```

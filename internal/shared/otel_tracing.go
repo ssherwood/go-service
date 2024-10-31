@@ -1,7 +1,8 @@
-package infra
+package shared
 
 import (
 	"context"
+	"github.com/ssherwood/locationservice/internal/config"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
@@ -9,8 +10,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
 	"google.golang.org/grpc/credentials"
-	"locationservice/config"
-	"log"
+	"log/slog"
 	"os"
 )
 
@@ -20,7 +20,7 @@ func grpcTracerOptions() []otlptracegrpc.Option {
 		otlptracegrpc.WithCompressor(config.OTELCompressor),
 	}
 
-	if config.OTELExporterInsecure == "true" {
+	if config.OTELExporterInsecure {
 		options = append(options, otlptracegrpc.WithInsecure())
 	} else {
 		options = append(options,
@@ -36,15 +36,15 @@ func grpcTracerOptions() []otlptracegrpc.Option {
 func InitTracerProvider(ctx context.Context) (*trace.TracerProvider, error) {
 	traceExporter, err := otlptracegrpc.New(ctx, grpcTracerOptions()...)
 	if err != nil {
-		log.Printf("Unable to initialize OTEL trace exporter: %v\n", err)
+		slog.Warn("Unable to initialize OTEL trace exporter", config.ErrAttr(err))
 		return nil, err
 	}
 
 	tracerProvider := trace.NewTracerProvider(
 		trace.WithBatcher(traceExporter),
 		trace.WithSampler(trace.AlwaysSample()), // TODO config
-		// // set the sampling rate based on the parent span to 60%
-		//        trace.WithSampler(trace.ParentBased(trace.TraceIDRatioBased(0.6))),
+		// e.g. set the sampling rate based on the parent span to 60%
+		// trace.WithSampler(trace.ParentBased(trace.TraceIDRatioBased(0.6))),
 		trace.WithResource(
 			resource.NewWithAttributes(
 				semconv.SchemaURL,

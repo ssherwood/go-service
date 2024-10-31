@@ -4,28 +4,28 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/yugabyte/pgx/v5"
 	"github.com/yugabyte/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"log"
 	"net/http"
 	"strconv"
 )
 
 type Handler struct {
-	db *pgxpool.Pool
+	db      *pgxpool.Pool
+	service *Service
 }
 
-func RegisterHandlers(r *mux.Router, db *pgxpool.Pool) {
-	handler := &Handler{db}
+func NewHandler(r *mux.Router, service *Service, db *pgxpool.Pool) *Handler {
+	handler := &Handler{service: service, db: db}
 	r.HandleFunc("/locations", handler.CreateLocation).Methods("POST")
 	r.HandleFunc("/locations/{id}", handler.GetLocation).Methods("GET")
 	r.HandleFunc("/locations/{id}", handler.UpdateLocation).Methods("PUT")
 	r.HandleFunc("/locations/{id}", handler.DeleteLocation).Methods("DELETE")
+	return handler
 }
 
 func (h *Handler) CreateLocation(w http.ResponseWriter, r *http.Request) {
@@ -35,24 +35,21 @@ func (h *Handler) CreateLocation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.db.QueryRow(context.Background(),
-		"INSERT INTO locations (name, address, city, state, zip_code, country) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
-		location.Name, location.Street, location.City, location.State, location.PostalCode, location.Country).Scan(&location.ID)
+	newLocation, err := h.service.CreateLocation(r.Context(), &location)
 	if err != nil {
+		// TODO better error handling conditions/types
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(location)
+	_ = json.NewEncoder(w).Encode(newLocation)
 }
 
 func (h *Handler) GetLocation(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	currentSpan := trace.SpanFromContext(ctx)
 	currentSpan.AddEvent("GetLocation")
-
-	fmt.Println("IdleConns = ", h.db.Stat().IdleConns())
 
 	vars := mux.Vars(r)
 	id, err := uuid.Parse(vars["id"])
@@ -62,42 +59,9 @@ func (h *Handler) GetLocation(w http.ResponseWriter, r *http.Request) {
 		currentSpan.SetStatus(codes.Error, err.Error())
 		return
 	}
-	// to do a
-	conn, err := h.db.Acquire(ctx)
-	defer conn.Release()
+
+	location, err := h.service.GetLocationById(ctx, id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		currentSpan.RecordError(err)
-		currentSpan.SetStatus(codes.Error, err.Error())
-		return
-	}
-
-	// enable yb_read_from_follower BEFORE the BEGIN TX (we'll reset it too at the end)
-	_, _ = conn.Exec(ctx, "set yb_read_from_followers = true")
-
-	tx, err := conn.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		currentSpan.RecordError(err)
-		currentSpan.SetStatus(codes.Error, err.Error())
-		return
-	}
-
-	var value string
-	_ = tx.QueryRow(ctx, "select current_setting('yb_read_from_followers')").Scan(&value)
-	log.Println("Running in Tx: yb_read_from_followers is", value)
-
-	// begin timer
-	var location Location
-	err = tx.QueryRow(ctx,
-		"select loc.id, loc.name, loc.description, adr.id, adr.street, adr.city, adr.state_cd, adr.postal_cd, adr.country_cd, adr.longitude, adr.latitude from location loc left join address adr on loc.address_id = adr.id where loc.id=$1 and loc.active=true;", id).
-		Scan(&location.ID, &location.Name, &location.Description, &location.AddressId, &location.Street, &location.City, &location.State, &location.PostalCode, &location.Country, &location.Longitude, &location.Latitude)
-	// end timer?
-
-	if err != nil {
-		_ = tx.Rollback(ctx)
-		_, _ = conn.Exec(ctx, "set yb_read_from_followers = false")
-
 		if errors.Is(err, pgx.ErrNoRows) {
 			http.Error(w, "Location not found", http.StatusNotFound)
 		} else {
@@ -107,9 +71,6 @@ func (h *Handler) GetLocation(w http.ResponseWriter, r *http.Request) {
 		currentSpan.SetStatus(codes.Error, err.Error())
 		return
 	}
-
-	_ = tx.Commit(ctx)
-	_, _ = conn.Exec(ctx, "set yb_read_from_followers = false")
 
 	json.NewEncoder(w).Encode(location)
 }

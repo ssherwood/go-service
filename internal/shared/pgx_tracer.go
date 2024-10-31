@@ -1,10 +1,11 @@
-package infra
+package shared
 
 import (
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/ssherwood/locationservice/internal/config"
 	"github.com/yugabyte/pgx/v5"
 	"github.com/yugabyte/pgx/v5/pgconn"
 	"go.opentelemetry.io/otel"
@@ -12,7 +13,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
 	"go.opentelemetry.io/otel/trace"
-	"locationservice/config"
 	"log"
 	"runtime/debug"
 	"strings"
@@ -88,10 +88,11 @@ func (t *PgxQueryTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pg
 	log.Printf(">>> Query End: tag: %v", data.CommandTag)
 
 	span := trace.SpanFromContext(ctx)
-	recordSQLError(span, data.Err)
 
 	if data.Err == nil {
 		span.SetAttributes(RowsAffectedKey.Int64(data.CommandTag.RowsAffected()))
+	} else {
+		recordSQLError(span, data.Err)
 	}
 
 	span.End()
