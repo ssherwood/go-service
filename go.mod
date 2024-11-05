@@ -1,10 +1,8 @@
-module github.com/ssherwood/locationservice
+module github.com/ssherwood/ysqlapp
 
 go 1.22
 
 require (
-	github.com/agoda-com/opentelemetry-go/otelslog v0.1.1
-	github.com/agoda-com/opentelemetry-logs-go v0.3.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/yugabyte/pgx/v5 v5.5.3-yb-3
@@ -13,7 +11,6 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.0.0-20240722195446-abc0ea69f0a3
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.28.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.28.0
-	go.opentelemetry.io/otel/exporters/stdout/stdoutlog v0.4.0
 	go.opentelemetry.io/otel/log v0.4.0
 	go.opentelemetry.io/otel/metric v1.28.0
 	go.opentelemetry.io/otel/sdk v1.28.0

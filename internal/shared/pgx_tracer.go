@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/ssherwood/locationservice/internal/config"
+	"github.com/ssherwood/ysqlapp/internal/config"
 	"github.com/yugabyte/pgx/v5"
 	"github.com/yugabyte/pgx/v5/pgconn"
 	"go.opentelemetry.io/otel"

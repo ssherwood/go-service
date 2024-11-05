@@ -2,7 +2,7 @@ package shared
 
 import (
 	"context"
-	"github.com/ssherwood/locationservice/internal/config"
+	"github.com/ssherwood/ysqlapp/internal/config"
 	"github.com/yugabyte/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"

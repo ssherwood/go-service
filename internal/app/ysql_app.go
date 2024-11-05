@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"github.com/gorilla/mux"
-	"github.com/ssherwood/locationservice/internal/config"
-	"github.com/ssherwood/locationservice/internal/location"
-	"github.com/ssherwood/locationservice/internal/shared"
+	"github.com/ssherwood/ysqlapp/internal/config"
+	"github.com/ssherwood/ysqlapp/internal/location"
+	"github.com/ssherwood/ysqlapp/internal/shared"
 	"github.com/yugabyte/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gorilla/mux/otelmux"
 	"go.opentelemetry.io/otel/attribute"
@@ -72,6 +72,11 @@ func (app *LocationApplication) Initialize(ctx context.Context) error {
 		return err
 	} else {
 		app.DB = db
+
+		// force establishing at least one valid connection
+		if err = shared.PingDB(ctx, db); err != nil {
+			return err
+		}
 	}
 
 	app.Router = mux.NewRouter()

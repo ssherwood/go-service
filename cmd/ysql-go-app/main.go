@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"github.com/ssherwood/locationservice/internal/app"
-	"github.com/ssherwood/locationservice/internal/config"
+	"github.com/ssherwood/ysqlapp/internal/app"
+	"github.com/ssherwood/ysqlapp/internal/config"
 	"log/slog"
 )
 

@@ -3,7 +3,7 @@ package shared
 import (
 	"context"
 	"fmt"
-	"github.com/ssherwood/locationservice/internal/config"
+	"github.com/ssherwood/ysqlapp/internal/config"
 	"github.com/yugabyte/pgx/v5"
 	"github.com/yugabyte/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel/attribute"
@@ -29,6 +29,22 @@ func InitializeDB(ctx context.Context) (*pgxpool.Pool, error) {
 	}
 }
 
+func PingDB(ctx context.Context, pool *pgxpool.Pool) error {
+	connection, err := pool.Acquire(ctx)
+	if err != nil {
+		slog.Error("Unable to acquire a connection from the database pool", "error", err, "config", pool.Config())
+		return err
+	} else {
+		if err = connection.Ping(ctx); err != nil {
+			slog.Error("Could not ping database", "error", err, "config", pool.Config())
+			return err
+		}
+	}
+	defer connection.Release()
+
+	return nil
+}
+
 func pgxPoolConfig() (*pgxpool.Config, error) {
 	url := fmt.Sprintf("postgres://%s:%s@%s/%s?%s",
 		config.DBUserName, config.DBPassword, config.DBHostname, config.DBDatabase,
@@ -36,8 +52,8 @@ func pgxPoolConfig() (*pgxpool.Config, error) {
 			map[string]string{
 				"sslmode":           config.DBSSLMode,
 				"statement_timeout": config.DBStatementTimeout.String(),
-				"load_balance":      config.DBYSQLLoadBalance,
-				"topology_keys":     config.DBYSQLTopologyKeys,
+				//"load_balance":      config.DBYSQLLoadBalance,
+				//"topology_keys":     config.DBYSQLTopologyKeys,
 			},
 		),
 	)
@@ -55,8 +71,10 @@ func pgxPoolConfig() (*pgxpool.Config, error) {
 	poolConfig.HealthCheckPeriod = config.DBHealthCheckPeriod
 	poolConfig.ConnConfig.ConnectTimeout = config.DBConnectTimeout
 
+	//	poolConfig.
 	poolConfig.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
-		//_ = conn.QueryRow(ctx, "SELECT * FROM TEST_FOO LIMIT 1") // your expensive query here
+		// your expensive query here:
+		_ = conn.QueryRow(ctx, "select pg_sleep(5), * from location loc left join address adr on loc.address_id = adr.id where loc.id='f9654e2a-dc0d-4423-8291-000000004448' and loc.active=true order by loc.id desc limit 1").Scan()
 		slog.Warn("AfterConnect")
 		return nil
 	}

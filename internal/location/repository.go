@@ -45,7 +45,7 @@ func (r *Repository) GetLocationById(ctx context.Context, id uuid.UUID) (*Locati
 	// enable yb_read_from_follower BEFORE the BEGIN TX (we'll reset it too at the end)
 	_, _ = conn.Exec(ctx, "set yb_read_from_followers = true")
 
-	_, _ = conn.Exec(ctx, "SELECT pg_sleep(30)")
+	//_, _ = conn.Exec(ctx, "SELECT pg_sleep(30)")
 
 	// now we can BEGIN TRANSACTION READ ONLY
 	tx, err := conn.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
