@@ -73,9 +73,9 @@ func pgxPoolConfig() (*pgxpool.Config, error) {
 
 	//	poolConfig.
 	poolConfig.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
-		// your expensive query here:
-		_ = conn.QueryRow(ctx, "select pg_sleep(5), * from location loc left join address adr on loc.address_id = adr.id where loc.id='f9654e2a-dc0d-4423-8291-000000004448' and loc.active=true order by loc.id desc limit 1").Scan()
-		slog.Warn("AfterConnect")
+		// your expensive query here (add pg_sleep(5) to simulate long delay)
+		_ = conn.QueryRow(ctx, "select * from location loc left join address adr on loc.address_id = adr.id where loc.id='f9654e2a-dc0d-4423-8291-000000004448' and loc.active=true order by loc.id desc limit 1").Scan()
+		slog.Info("AfterConnect")
 		return nil
 	}
 
